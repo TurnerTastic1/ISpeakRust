@@ -1,28 +1,41 @@
-use std::thread;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{TcpListener, TcpStream};
 
-fn spawn_client_handler(message: String) -> thread::JoinHandle<()> {
-    let handle = thread::spawn(move || {
-        println!("Thread started: {}", message);
-        thread::sleep(std::time::Duration::from_secs(1));
-        println!("Thread finished: {}", message);
-    });
+async fn handle_client(socket: TcpStream) {
+    println!("Handling client: {:?}", socket);
 
-    handle
+    let (mut reader, mut writer) = tokio::io::split(socket);
+
+    let mut buf = vec![0; 1024];
+    loop {
+        let n = match reader.read(&mut buf).await {
+            Ok(n) if n == 0 => return,
+            Ok(n) => {
+                println!("read {} bytes", n);
+                n
+            }
+            Err(e) => {
+                eprintln!("failed to read from socket; err = {:?}", e);
+                return;
+            }
+        };
+
+        if let Err(e) = writer.write_all(&buf[..n]).await {
+            eprintln!("failed to write to socket; err = {:?}", e);
+            return;
+        }
+    }
 }
 
-fn main() {
-    // Array of messages
-    let messages = ["Message 1", "Message 2", "Message 3"];
-    let mut threads = Vec::new();
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
-    // Loop to call spawn_client_handler for each message
-    for &message in &messages {
-        let handle = spawn_client_handler(message.to_string());
-        threads.push(handle);
+    let listener =TcpListener::bind("127.0.0.1:8080").await?;
+
+    while let Ok((socket, addr)) = listener.accept().await {
+        println!("Accepted connection from: {}", addr);
+        tokio::spawn(handle_client(socket));
     }
 
-    // Wait for all threads to finish
-    for handle in threads {
-        handle.join().unwrap();
-    }
+    Ok(())
 }
