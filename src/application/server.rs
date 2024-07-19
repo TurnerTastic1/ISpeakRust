@@ -3,20 +3,19 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, split};
 use tokio::net::TcpListener;
 use tokio::sync::broadcast;
 
-pub(crate) struct Application {
-    listener: TcpListener
+pub struct Server {
+    listener: TcpListener,
 }
 
-impl Application {
+impl Server {
     fn new(listener: TcpListener) -> Self {
-        Application { listener }
+        Server { listener }
     }
 
     pub async fn initialize() -> Result<Self, Box<dyn std::error::Error>> {
-        log4rs::init_file("log4rs.yaml", Default::default())?;
         let listener = TcpListener::bind("127.0.0.1:8080").await?;
 
-        Ok(Application::new(listener))
+        Ok(Server::new(listener))
     }
 
     pub async fn start_server(&self) -> Result<(), Box<dyn std::error::Error>> {
@@ -95,5 +94,4 @@ impl Application {
             });
         }
     }
-
 }
