@@ -13,33 +13,57 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (tx, _rx) = broadcast::channel(10);
 
     loop {
-        let (socket, addr) = listener.accept().await.unwrap();
+        let (mut socket, addr) = listener.accept().await.unwrap();
 
+        debug!("Accepted connection from {:?}", addr);
+        
         let tx = tx.clone();
         let mut rx = tx.subscribe();
 
         tokio::spawn(async move {
-            let (reader, mut writer) = split(socket);
+            if let Err(e) = socket.write_all(b"Please enter your username:\n").await {
+                warn!("failed to write to socket; err = {:?}", e);
+                return Err(e);
+            }
 
+            let (reader, mut writer) = split(socket);
             let mut reader = BufReader::new(reader);
+
             let mut line = String::new();
+            let _bytes_read = match reader.read_line(&mut line).await {
+                Ok(bytes_read) if bytes_read == 0 => {
+                    debug!("Connection from {} closed", addr);
+                    return Ok(());
+                }
+                Ok(_bytes_read) => _bytes_read,
+                Err(e) => {
+                    warn!("Failed to read from socket {} - Error: {}", addr, e);
+                    return Err(e.into());
+                }
+            };
+
+            let username = line.trim().to_string();
+
+            println!("Received username from {}: {}", addr, username);
+            line.clear();
 
             loop {
                 tokio::select! {
                     result = reader.read_line(&mut line) => {
                         match result {
                             Ok(bytes_read) if bytes_read == 0 => {
-                                debug!("connection closed");
-                                break;
+                                debug!("Connection from {} closed", addr);
+                                return Ok(());
                             }
-                            Ok(bytes_read) => {
-                                debug!("read {} bytes", bytes_read);
-                                tx.send((line.clone(), addr)).unwrap();
+                            Ok(_) => {
+                                let msg = format!("\x1b[32m{}\x1b[0m: {}", username, line);
+
+                                tx.send((msg.clone(), addr)).unwrap();
                                 line.clear();
                             }
                             Err(e) => {
-                                warn!("failed to read from socket; err = {:?}", e);
-                                break;
+                                warn!("Failed to read from socket {} - Error: {}", addr, e);
+                                return Err(e.into());
                             }
                         }
                     }
@@ -48,11 +72,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let (msg, recv_addr) = result.unwrap();
 
                         if addr != recv_addr {
-                            writer.write_all(msg.as_bytes()).await.unwrap();
-                            // if let Err(e) = writer.write_all(msg.as_bytes()).await {
-                            //     warn!("failed to write to socket; err = {:?}", e);
-                            //     break;
-                            // }
+                            if let Err(e) = writer.write_all(msg.as_bytes()).await {
+                                warn!("Failed to write from socket {} - Error: {}", addr, e);
+                                return Err(e.into());
+                            }
                         }
                     }
                 }
