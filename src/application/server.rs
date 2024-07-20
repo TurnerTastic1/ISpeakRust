@@ -1,6 +1,6 @@
 use log::{debug, warn};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, split};
-use tokio::net::TcpListener;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, ReadHalf, split};
+use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::broadcast;
 
 pub struct Server {
@@ -40,23 +40,10 @@ impl Server {
                 let (reader, mut writer) = split(socket);
                 let mut reader = BufReader::new(reader);
 
+                let username = read_line(&mut reader).await.unwrap();
+                debug!("Username: {}", username);
+
                 let mut line = String::new();
-                let _bytes_read = match reader.read_line(&mut line).await {
-                    Ok(bytes_read) if bytes_read == 0 => {
-                        debug!("Connection from {} closed", addr);
-                        return Ok(());
-                    }
-                    Ok(_bytes_read) => _bytes_read,
-                    Err(e) => {
-                        warn!("Failed to read from socket {} - Error: {}", addr, e);
-                        return Err(e.into());
-                    }
-                };
-
-                let username = line.trim().to_string();
-
-                println!("Received username from {}: {}", addr, username);
-                line.clear();
 
                 loop {
                     tokio::select! {
@@ -93,5 +80,16 @@ impl Server {
                 }
             });
         }
+    }
+}
+
+async fn read_line(reader: &mut BufReader<ReadHalf<TcpStream>>) -> Result<String, Box<dyn std::error::Error>> {
+    let mut line = String::new();
+    match reader.read_line(&mut line).await {
+        Ok(bytes_read) if bytes_read == 0 => {
+            Err("Connection closed".into())
+        }
+        Ok(_) => Ok(line.trim().to_string()),
+        Err(e) => Err(e.into()),
     }
 }

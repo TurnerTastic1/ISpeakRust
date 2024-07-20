@@ -1,7 +1,7 @@
-use super::Server;
+use super::{ Server, logger };
 
 pub struct Application {
-    server: Server
+    server: Server,
 }
 
 impl Application {
@@ -10,7 +10,7 @@ impl Application {
     }
 
     pub async fn initialize() -> Result<Self, Box<dyn std::error::Error>> {
-        log4rs::init_file("log4rs.yaml", Default::default())?;
+        logger::init_logging();
 
         let server = Server::initialize().await?;
 

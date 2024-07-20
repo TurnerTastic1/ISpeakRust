@@ -1,4 +1,3 @@
-mod logger;
 mod application;
 
 use application::Application;
