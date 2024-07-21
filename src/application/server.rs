@@ -25,7 +25,7 @@ impl Server {
         Ok(Server::new(listener))
     }
 
-    pub async fn start_server(&self) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn start_server(&self) -> Result<(), ApplicationError> {
         debug!("Starting server");
 
         let (tx, _rx) = broadcast::channel(10);

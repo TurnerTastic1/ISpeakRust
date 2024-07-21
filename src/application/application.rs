@@ -18,7 +18,7 @@ impl Application {
         Ok(Application::new(server))
     }
 
-    pub async fn run(&self) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn run(&self) -> Result<(), ApplicationError> {
         self.server.start_server().await
     }
 }
