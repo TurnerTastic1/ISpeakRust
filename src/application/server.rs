@@ -41,7 +41,7 @@ impl Server {
             tokio::spawn(async move {
                 if let Err(e) = socket.write_all(b"Please enter your username:\n").await {
                     warn!("failed to write to socket; err = {:?}", e);
-                    return Err::<(), std::io::Error>(e.into());
+                    return ApplicationError::Custom("Failed to write to socket".parse().unwrap());
                 }
 
                 let (reader, mut writer) = split(socket);
@@ -59,9 +59,9 @@ impl Server {
 
                                     tx.send((msg.clone(), addr)).unwrap();
                                 }
-                                Err(e) => {
-                                    warn!("Failed to read from socket {} - Error: {}", addr, e);
-                                    return Err(e.into());
+                                Err(_) => {
+                                    warn!("Failed to read from socket {}", addr);
+                                    return ApplicationError::Custom("Failed to read from socket".parse().unwrap());
                                 }
                             }
                         }
@@ -71,7 +71,7 @@ impl Server {
                             if addr != recv_addr {
                                 if let Err(e) = writer.write_all(msg.as_bytes()).await {
                                     warn!("Failed to write from socket {} - Error: {}", addr, e);
-                                    return Err(e.into());
+                                    return ApplicationError::Custom("Failed to write from socket".parse().unwrap());
                                 }
                             }
                     }
@@ -82,7 +82,7 @@ impl Server {
     }
 }
 
-async fn read_line<R>(reader: &mut R) -> Result<String, std::io::Error>
+async fn read_line<R>(reader: &mut R) -> Result<String, ApplicationError>
 where
     R: AsyncBufReadExt + Unpin,
 {
@@ -93,6 +93,6 @@ where
             Ok(String::new())
         }
         Ok(_) => Ok(line),
-        Err(e) => Err(e),
+        Err(e) => Err(ApplicationError::Custom(format!("Failed to read line: {:?}", e))),
     }
 }

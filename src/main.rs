@@ -18,7 +18,7 @@ async fn main() -> Result<(), ApplicationError> {
         Ok(_) => Ok(()),
         Err(e) => {
             debug!("Failed to start application: {:?}", e);
-            Err(ApplicationError::Custom("Failed to start application".parse().unwrap()))
+            Err(e)
         }
     }
 }
