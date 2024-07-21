@@ -2,6 +2,7 @@ use log::{debug, warn};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, split};
 use tokio::net::{TcpListener};
 use tokio::sync::broadcast;
+use crate::application::error::errors::ApplicationError;
 
 pub struct Server {
     listener: TcpListener,
@@ -12,8 +13,14 @@ impl Server {
         Server { listener }
     }
 
-    pub async fn initialize() -> Result<Self, Box<dyn std::error::Error>> {
-        let listener = TcpListener::bind("127.0.0.1:8080").await?;
+    pub async fn initialize() -> Result<Self, ApplicationError> {
+        let listener = match TcpListener::bind("127.0.0.1:8080").await {
+            Ok(listener) => listener,
+            Err(e) => {
+                warn!("Failed to bind to port 8080: {:?}", e);
+                return Err(ApplicationError::Custom("Failed to bind to port 8080".parse().unwrap()));
+            }
+        };
 
         Ok(Server::new(listener))
     }

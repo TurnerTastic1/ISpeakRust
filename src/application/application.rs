@@ -1,4 +1,5 @@
-use super::{ Server, logger };
+use crate::application::error::errors::ApplicationError;
+use super::{Server, logger };
 
 pub struct Application {
     server: Server,
@@ -9,7 +10,7 @@ impl Application {
         Application { server }
     }
 
-    pub async fn initialize() -> Result<Self, Box<dyn std::error::Error>> {
+    pub async fn initialize() -> Result<Self, ApplicationError> {
         logger::init_logging();
 
         let server = Server::initialize().await?;
@@ -17,7 +18,7 @@ impl Application {
         Ok(Application::new(server))
     }
 
-    pub async fn start(&self) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn run(&self) -> Result<(), Box<dyn std::error::Error>> {
         self.server.start_server().await
     }
 }
