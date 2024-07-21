@@ -1,6 +1,6 @@
 use log::{debug, warn};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, ReadHalf, split};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, split};
+use tokio::net::{TcpListener};
 use tokio::sync::broadcast;
 
 pub struct Server {
@@ -34,62 +34,58 @@ impl Server {
             tokio::spawn(async move {
                 if let Err(e) = socket.write_all(b"Please enter your username:\n").await {
                     warn!("failed to write to socket; err = {:?}", e);
-                    return Err(e);
+                    return Err::<(), std::io::Error>(e.into());
                 }
 
                 let (reader, mut writer) = split(socket);
                 let mut reader = BufReader::new(reader);
 
-                let username = read_line(&mut reader).await.unwrap();
+                let username = read_line(&mut reader).await.unwrap().trim().to_string();
                 debug!("Username: {}", username);
-
-                let mut line = String::new();
 
                 loop {
                     tokio::select! {
-                    result = reader.read_line(&mut line) => {
-                        match result {
-                            Ok(bytes_read) if bytes_read == 0 => {
-                                debug!("Connection from {} closed", addr);
-                                return Ok(());
-                            }
-                            Ok(_) => {
-                                let msg = format!("\x1b[32m{}\x1b[0m: {}", username, line);
+                        result = read_line(&mut reader) => {
+                            match result {
+                                Ok(line) => {
+                                    let msg = format!("\x1b[32m{}\x1b[0m: {}", username, line);
 
-                                tx.send((msg.clone(), addr)).unwrap();
-                                line.clear();
-                            }
-                            Err(e) => {
-                                warn!("Failed to read from socket {} - Error: {}", addr, e);
-                                return Err(e.into());
+                                    tx.send((msg.clone(), addr)).unwrap();
+                                }
+                                Err(e) => {
+                                    warn!("Failed to read from socket {} - Error: {}", addr, e);
+                                    return Err(e.into());
+                                }
                             }
                         }
-                    }
+                        result = rx.recv() => {
+                            let (msg, recv_addr) = result.unwrap();
 
-                    result = rx.recv() => {
-                        let (msg, recv_addr) = result.unwrap();
-
-                        if addr != recv_addr {
-                            if let Err(e) = writer.write_all(msg.as_bytes()).await {
-                                warn!("Failed to write from socket {} - Error: {}", addr, e);
-                                return Err(e.into());
+                            if addr != recv_addr {
+                                if let Err(e) = writer.write_all(msg.as_bytes()).await {
+                                    warn!("Failed to write from socket {} - Error: {}", addr, e);
+                                    return Err(e.into());
+                                }
                             }
-                        }
                     }
-                }
+                    }
                 }
             });
         }
     }
 }
 
-async fn read_line(reader: &mut BufReader<ReadHalf<TcpStream>>) -> Result<String, Box<dyn std::error::Error>> {
+async fn read_line<R>(reader: &mut R) -> Result<String, std::io::Error>
+where
+    R: AsyncBufReadExt + Unpin,
+{
     let mut line = String::new();
     match reader.read_line(&mut line).await {
         Ok(bytes_read) if bytes_read == 0 => {
-            Err("Connection closed".into())
+            // Connection closed
+            Ok(String::new())
         }
-        Ok(_) => Ok(line.trim().to_string()),
-        Err(e) => Err(e.into()),
+        Ok(_) => Ok(line),
+        Err(e) => Err(e),
     }
 }
