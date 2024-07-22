@@ -15,7 +15,7 @@ impl Server {
     }
 
     pub async fn initialize() -> Result<Self, ApplicationError> {
-        let listener = match TcpListener::bind("127.0.0.1:8080").await {
+        let listener = match TcpListener::bind("0.0.0.0:8080").await {
             Ok(listener) => listener,
             Err(e) => {
                 warn!("Failed to bind to port 8080: {:?}", e);
