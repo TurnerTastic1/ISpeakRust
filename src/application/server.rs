@@ -2,7 +2,7 @@ use log::{debug, warn};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, split};
 use tokio::net::{TcpListener};
 use tokio::sync::broadcast;
-use crate::application::error::errors::ApplicationError;
+use crate::application::error::errors::{ApplicationError, ErrorSeverity};
 
 pub struct Server {
     listener: TcpListener,
@@ -18,7 +18,11 @@ impl Server {
             Ok(listener) => listener,
             Err(e) => {
                 warn!("Failed to bind to port 8080: {:?}", e);
-                return Err(ApplicationError::Custom("Failed to bind to port 8080".parse().unwrap()));
+                return Err(ApplicationError::new(
+                    "Failed to bind to port 8080",
+                    Some(Box::new(e)),
+                    ErrorSeverity::ERROR,
+                ));
             }
         };
 
@@ -31,7 +35,17 @@ impl Server {
         let (tx, _rx) = broadcast::channel(10);
 
         loop {
-            let (mut socket, addr) = self.listener.accept().await.unwrap();
+            let (mut socket, addr) = match self.listener.accept().await {
+                Ok((socket, addr)) => (socket, addr),
+                Err(e) => {
+                    warn!("Failed to accept connection: {:?}", e);
+                    return Err(ApplicationError::new(
+                        "Failed to accept connection",
+                        Some(Box::new(e)),
+                        ErrorSeverity::ERROR,
+                    ));
+                }
+            };
 
             debug!("Accepted connection from {:?}", addr);
 
@@ -41,13 +55,28 @@ impl Server {
             tokio::spawn(async move {
                 if let Err(e) = socket.write_all(b"Please enter your username:\n").await {
                     warn!("failed to write to socket; err = {:?}", e);
-                    return ApplicationError::Custom("Failed to write to socket".parse().unwrap());
+                    return ApplicationError::new("Failed to write to socket", None, ErrorSeverity::ERROR);
                 }
 
                 let (reader, mut writer) = split(socket);
                 let mut reader = BufReader::new(reader);
 
-                let username = read_line(&mut reader).await.unwrap().trim().to_string();
+                let username = match read_line(&mut reader).await {
+                    Ok(username) => {
+                        if username.trim().is_empty() {
+                            return ApplicationError::new(
+                                "Username cannot be empty",
+                                None,
+                                ErrorSeverity::ERROR,
+                            );
+                        }
+                        username.trim().to_string()
+                    },
+                    Err(e) => {
+                        warn!("{}", e.message);
+                        return e;
+                    }
+                };
                 debug!("Username: {}", username);
 
                 loop {
@@ -59,9 +88,9 @@ impl Server {
 
                                     tx.send((msg.clone(), addr)).unwrap();
                                 }
-                                Err(_) => {
-                                    warn!("Failed to read from socket {}", addr);
-                                    return ApplicationError::Custom("Failed to read from socket".parse().unwrap());
+                                Err(e) => {
+                                    warn!("{}" ,e.message);
+                                    return e;
                                 }
                             }
                         }
@@ -71,10 +100,14 @@ impl Server {
                             if addr != recv_addr {
                                 if let Err(e) = writer.write_all(msg.as_bytes()).await {
                                     warn!("Failed to write from socket {} - Error: {}", addr, e);
-                                    return ApplicationError::Custom("Failed to write from socket".parse().unwrap());
+                                    return ApplicationError::new(
+                                        "Failed to write from socket",
+                                        None,
+                                        ErrorSeverity::ERROR,
+                                    );
                                 }
                             }
-                    }
+                        }
                     }
                 }
             });
@@ -93,6 +126,12 @@ where
             Ok(String::new())
         }
         Ok(_) => Ok(line),
-        Err(e) => Err(ApplicationError::Custom(format!("Failed to read line: {:?}", e))),
+        Err(e) => Err(
+            ApplicationError::new(
+                "Failed to read line",
+                Some(Box::new(e)),
+                ErrorSeverity::ERROR,
+            )
+        ),
     }
 }
