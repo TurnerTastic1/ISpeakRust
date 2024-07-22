@@ -53,7 +53,7 @@ impl Server {
     }
 }
 
-async fn handle_client<Reader, Writer>(
+pub async fn handle_client<Reader, Writer>(
     reader: Reader,
     mut writer: Writer,
     addr: std::net::SocketAddr,
@@ -70,7 +70,7 @@ where
         return Err(ApplicationError::new(
             "Failed to write to socket",
             None,
-            ErrorSeverity::CRITICAL
+            ErrorSeverity::CRITICAL,
         ));
     }
 
