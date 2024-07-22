@@ -1,5 +1,5 @@
 use log::{debug, warn};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, split};
+use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader, split};
 use tokio::net::{TcpListener};
 use tokio::sync::broadcast;
 use crate::application::model::error::{ApplicationError, ErrorSeverity};
@@ -36,52 +36,67 @@ impl Server {
         let (tx, _rx) = broadcast::channel(10);
 
         loop {
-            let (mut socket, addr) = match self.listener.accept().await {
-                Ok((socket, addr)) => (socket, addr),
-                Err(e) => {
-                    warn!("Failed to accept connection: {:?}", e);
-                    return Err(ApplicationError::new(
-                        "Failed to accept connection",
-                        Some(Box::new(e)),
-                        ErrorSeverity::ERROR,
-                    ));
-                }
+            let Ok((socket, addr)) = self.listener.accept().await else {
+                warn!("Failed to accept connection");
+                continue;
             };
 
             debug!("Accepted connection from {:?}", addr);
 
             let tx = tx.clone();
-            let mut rx = tx.subscribe();
 
             tokio::spawn(async move {
-                if let Err(e) = socket.write_all(b"Please enter your username:\n").await {
-                    warn!("failed to write to socket; err = {:?}", e);
-                    return ApplicationError::new("Failed to write to socket", None, ErrorSeverity::CRITICAL);
-                }
+                let (reader, writer) = split(socket);
+                let _handle = handle_client(reader, writer, addr, tx).await;
+            });
+        }
+    }
+}
 
-                let (reader, mut writer) = split(socket);
-                let mut reader = BufReader::new(reader);
+async fn handle_client<Reader, Writer>(
+    reader: Reader,
+    mut writer: Writer,
+    addr: std::net::SocketAddr,
+    tx: broadcast::Sender<(String, std::net::SocketAddr)>,
+) -> Result<(), ApplicationError>
+where
+    Reader: AsyncRead + Unpin,
+    Writer: AsyncWrite + Unpin,
+{
+    let mut reader = BufReader::new(reader);
 
-                let username = match read_line(&mut reader).await {
-                    Ok(line) => {
-                        if line.message.trim().is_empty() {
-                            return ApplicationError::new(
-                                "Username cannot be empty",
-                                None,
-                                ErrorSeverity::WARN,
-                            );
-                        }
-                        line.message.trim().to_string()
-                    }
-                    Err(e) => {
-                        warn!("{}", e.message);
-                        return e;
-                    }
-                };
-                debug!("Username: {}", username);
+    if let Err(e) = writer.write_all(b"Please enter your username:\n").await {
+        warn!("failed to write to socket; err = {:?}", e);
+        return Err(ApplicationError::new(
+            "Failed to write to socket",
+            None,
+            ErrorSeverity::CRITICAL
+        ));
+    }
 
-                loop {
-                    tokio::select! {
+    let username = match read_line(&mut reader).await {
+        Ok(line) => {
+            if line.message.trim().is_empty() {
+                return Err(ApplicationError::new(
+                    "Username cannot be empty",
+                    None,
+                    ErrorSeverity::WARN,
+                ));
+            }
+            line.message.trim().to_string()
+        }
+        Err(e) => {
+            warn!("{}", e.message);
+            return Err(e);
+        }
+    };
+    debug!("Username: {}", username);
+
+    // Setup subscriber here to not catch messages sent during username process (Cool bug!)
+    let mut rx = tx.subscribe();
+
+    loop {
+        tokio::select! {
                         result = read_line(&mut reader) => {
                             match result {
                                 Ok(line) => {
@@ -91,7 +106,7 @@ impl Server {
                                 }
                                 Err(e) => {
                                     warn!("{}" ,e.message);
-                                    return e;
+                                    return Err(e);
                                 }
                             }
                         }
@@ -101,18 +116,15 @@ impl Server {
                             if addr != recv_addr {
                                 if let Err(e) = writer.write_all(msg.as_bytes()).await {
                                     warn!("Failed to write from socket {} - Error: {}", addr, e);
-                                    return ApplicationError::new(
+                                    return Err(ApplicationError::new(
                                         "Failed to write from socket",
                                         None,
                                         ErrorSeverity::ERROR,
-                                    );
+                                    ));
                                 }
                             }
                         }
                     }
-                }
-            });
-        }
     }
 }
 
