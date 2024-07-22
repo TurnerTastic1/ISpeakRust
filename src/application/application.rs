@@ -1,4 +1,4 @@
-use crate::application::error::errors::ApplicationError;
+use crate::application::model::error::ApplicationError;
 use super::{Server, logger };
 
 pub struct Application {

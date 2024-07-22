@@ -2,7 +2,7 @@ mod application;
 
 use log::debug;
 use application::Application;
-use application::error::errors::ApplicationError;
+use application::model::error::ApplicationError;
 
 #[tokio::main]
 async fn main() -> Result<(), ApplicationError> {

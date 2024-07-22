@@ -1,5 +1,5 @@
 pub mod application;
-pub mod error;
+pub mod model;
 mod server;
 mod logger;
 

@@ -2,7 +2,8 @@ use log::{debug, warn};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, split};
 use tokio::net::{TcpListener};
 use tokio::sync::broadcast;
-use crate::application::error::errors::{ApplicationError, ErrorSeverity};
+use crate::application::model::error::{ApplicationError, ErrorSeverity};
+use crate::application::model::message::Message;
 
 pub struct Server {
     listener: TcpListener,
@@ -55,23 +56,23 @@ impl Server {
             tokio::spawn(async move {
                 if let Err(e) = socket.write_all(b"Please enter your username:\n").await {
                     warn!("failed to write to socket; err = {:?}", e);
-                    return ApplicationError::new("Failed to write to socket", None, ErrorSeverity::ERROR);
+                    return ApplicationError::new("Failed to write to socket", None, ErrorSeverity::CRITICAL);
                 }
 
                 let (reader, mut writer) = split(socket);
                 let mut reader = BufReader::new(reader);
 
                 let username = match read_line(&mut reader).await {
-                    Ok(username) => {
-                        if username.trim().is_empty() {
+                    Ok(line) => {
+                        if line.message.trim().is_empty() {
                             return ApplicationError::new(
                                 "Username cannot be empty",
                                 None,
-                                ErrorSeverity::ERROR,
+                                ErrorSeverity::WARN,
                             );
                         }
-                        username.trim().to_string()
-                    },
+                        line.message.trim().to_string()
+                    }
                     Err(e) => {
                         warn!("{}", e.message);
                         return e;
@@ -84,7 +85,7 @@ impl Server {
                         result = read_line(&mut reader) => {
                             match result {
                                 Ok(line) => {
-                                    let msg = format!("\x1b[32m{}\x1b[0m: {}", username, line);
+                                    let msg = format!("\x1b[32m{}\x1b[0m: {}", username, line.message);
 
                                     tx.send((msg.clone(), addr)).unwrap();
                                 }
@@ -115,7 +116,7 @@ impl Server {
     }
 }
 
-async fn read_line<R>(reader: &mut R) -> Result<String, ApplicationError>
+async fn read_line<R>(reader: &mut R) -> Result<Message, ApplicationError>
 where
     R: AsyncBufReadExt + Unpin,
 {
@@ -123,9 +124,13 @@ where
     match reader.read_line(&mut line).await {
         Ok(bytes_read) if bytes_read == 0 => {
             // Connection closed
-            Ok(String::new())
+            Ok(Message::new("".to_string()))
         }
-        Ok(_) => Ok(line),
+        Ok(_) => Ok(
+            Message::new(
+                line
+            )
+        ),
         Err(e) => Err(
             ApplicationError::new(
                 "Failed to read line",
