@@ -34,7 +34,7 @@ impl Server {
     pub async fn start_server(&self) -> Result<(), ApplicationError> {
         debug!("Starting server");
 
-        let (tx, _rx) = broadcast::channel(10);
+        let (tx, _rx) = broadcast::channel(1000);
 
         loop {
             let Ok(client) = accept_connection(&self.listener).await else {
