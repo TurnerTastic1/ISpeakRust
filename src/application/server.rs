@@ -1,7 +1,8 @@
 use log::{debug, warn};
-use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader, split};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, split};
 use tokio::net::{TcpListener};
 use tokio::sync::broadcast;
+use crate::application::model::client::Client;
 use crate::application::model::error::{ApplicationError, ErrorSeverity};
 use crate::application::model::message::Message;
 
@@ -36,33 +37,39 @@ impl Server {
         let (tx, _rx) = broadcast::channel(10);
 
         loop {
-            let Ok((socket, addr)) = self.listener.accept().await else {
+            let Ok(client) = accept_connection(&self.listener).await else {
                 warn!("Failed to accept connection");
                 continue;
             };
 
-            debug!("Accepted connection from {:?}", addr);
-
             let tx = tx.clone();
 
             tokio::spawn(async move {
-                let (reader, writer) = split(socket);
-                let _handle = handle_client(reader, writer, addr, tx).await;
+                let Ok(_handle) = handle_client(client, tx).await else {
+                    warn!("Failed to handle client");
+                    return;
+                };
             });
         }
     }
 }
 
-pub async fn handle_client<Reader, Writer>(
-    reader: Reader,
-    mut writer: Writer,
-    addr: std::net::SocketAddr,
-    tx: broadcast::Sender<(String, std::net::SocketAddr)>,
-) -> Result<(), ApplicationError>
-where
-    Reader: AsyncRead + Unpin,
-    Writer: AsyncWrite + Unpin,
-{
+async fn accept_connection(listener: &TcpListener) -> Result<Client, ApplicationError> {
+    match listener.accept().await {
+        Ok((socket, addr)) => {
+            debug!("Accepted connection from {:?}", addr);
+            Ok(Client::new(socket, addr))
+        },
+        Err(e) => Err(ApplicationError::new(
+            "Failed to accept connection",
+            Some(Box::new(e)),
+            ErrorSeverity::ERROR,
+        )),
+    }
+}
+
+async fn handle_client(client: Client, tx: broadcast::Sender<(String, std::net::SocketAddr)>,) -> Result<Client, ApplicationError> {
+    let (reader, mut writer) = split(client.socket);
     let mut reader = BufReader::new(reader);
 
     if let Err(e) = writer.write_all(b"Please enter your username:\n").await {
@@ -77,6 +84,7 @@ where
     let username = match read_line(&mut reader).await {
         Ok(line) => {
             if line.message.trim().is_empty() {
+                warn!("Username cannot be empty");
                 return Err(ApplicationError::new(
                     "Username cannot be empty",
                     None,
@@ -102,7 +110,7 @@ where
                                 Ok(line) => {
                                     let msg = format!("\x1b[32m{}\x1b[0m: {}", username, line.message);
 
-                                    tx.send((msg.clone(), addr)).unwrap();
+                                    tx.send((msg.clone(), client.addr)).unwrap();
                                 }
                                 Err(e) => {
                                     warn!("{}" ,e.message);
@@ -113,9 +121,9 @@ where
                         result = rx.recv() => {
                             let (msg, recv_addr) = result.unwrap();
 
-                            if addr != recv_addr {
+                            if client.addr != recv_addr {
                                 if let Err(e) = writer.write_all(msg.as_bytes()).await {
-                                    warn!("Failed to write from socket {} - Error: {}", addr, e);
+                                    warn!("Failed to write from socket {} - Error: {}", client.addr, e);
                                     return Err(ApplicationError::new(
                                         "Failed to write from socket",
                                         None,

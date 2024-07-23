@@ -6,6 +6,7 @@ pub enum ErrorSeverity {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct ApplicationError {
     pub message: String,
     pub cause: Option<Box<dyn std::error::Error + Send>>,

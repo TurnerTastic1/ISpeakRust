@@ -3,8 +3,14 @@ name = "ISpeakRust"
 version = "0.1.0"
 edition = "2021"
 
+[scripts]
+watch = "cargo watch -x 'run --bin ISpeakRust'"
+
 [dependencies]
 tokio = { version = "1.38.1", features = ["full"] }
 log4rs = "1.3.0"
 log = "0.4.22"
 tokio-test = "0.4.4"
+
+[dev-dependencies]
+cargo-watch = "8.5.2"

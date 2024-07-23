@@ -1,9 +1,9 @@
-FROM rust:1.79 as build
+FROM rust:latest
 
-WORKDIR /usr/src/ISpeakRust
+WORKDIR /usr/src/app
 
 COPY . .
 
-RUN cargo build --release
+RUN cargo build
 
-CMD ["./target/release/ISpeakRust"]
+CMD cargo run

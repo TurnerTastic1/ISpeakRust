@@ -1,9 +1,14 @@
 version: '3'
 services:
-  ispeakrust:
+  my-app:
     build:
       context: .
-    volumes:
-      - .:/src
+      dockerfile: Dockerfile
+    working_dir: /usr/src/app
     ports:
       - "8080:8080"
+    command: cargo run
+    volumes:
+      - .:/usr/src/app
+    environment:
+      RUST_BACKTRACE: 1
